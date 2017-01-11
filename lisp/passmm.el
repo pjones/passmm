@@ -81,8 +81,8 @@ buffer and refreshed."
           (revert-buffer))
       (with-current-buffer buf
         (rename-buffer passmm-buffer-name)
-        (passmm-mode t))
-    (switch-to-buffer buf))))
+        (passmm-mode t)))
+    (switch-to-buffer buf)))
 
 (defun passmm-generate-password (&optional ask-dir)
   "Generate a password entry after asking for its name.
