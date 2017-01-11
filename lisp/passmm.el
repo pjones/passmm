@@ -68,9 +68,9 @@
 
 (defvar passmm-mode-map
   (let ((map (make-keymap)))
-    (define-key map (kbd "C-c C-p +") 'passmm-generate-password)
-    (define-key map (kbd "RET")       'passmm-edit-entry)
-    (define-key map (kbd "C-<return>")  'passmm-kill-password)
+    (define-key map (kbd "C-c C-p +")  'passmm-generate-password)
+    (define-key map (kbd "RET")        'passmm-edit-entry)
+    (define-key map (kbd "C-<return>") 'passmm-kill-password)
     map)
   "Default keymap for passmm.")
 
