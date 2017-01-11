@@ -1,9 +1,10 @@
-;;; passmm.el -- A minor mode for pass (Password Store).  -*- lexical-binding: t -*-
+;;; passmm.el --- A minor mode for pass (Password Store).  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2016,2017 Peter Jones <pjones@devalot.com>
-;;
+
 ;; Author: Peter Jones <pjones@devalot.com>
-;; URL: https://github.com/pjones/passmm
+;; Homepage: https://github.com/pjones/passmm
+;; Package-Requires: ((emacs "24"))
 ;; Version: 0.1.0
 ;;
 ;; This file is not part of GNU Emacs.
