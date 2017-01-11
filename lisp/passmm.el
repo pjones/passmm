@@ -1,6 +1,6 @@
 ;;; passmm.el -- A minor mode for pass (Password Store).  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2016 Peter Jones <pjones@devalot.com>
+;; Copyright (C) 2016,2017 Peter Jones <pjones@devalot.com>
 ;;
 ;; Author: Peter Jones <pjones@devalot.com>
 ;; URL: https://github.com/pjones/passmm
@@ -10,7 +10,8 @@
 
 ;;; Commentary:
 ;;
-;; FIXME:
+;; This is a minor mode that uses `dired' to display all password
+;; files from the password store.
 
 ;;; License:
 ;;
@@ -48,6 +49,13 @@
   :type 'string
   :group 'passmm)
 
+(defcustom passmm-kill-timeout
+  (let ((env (getenv "PASSWORD_STORE_CLIP_TIME")))
+    (if env (string-to-number env) 45))
+  "How long to wait before removing a password from the kill ring."
+  :type 'number
+  :group 'passmm)
+
 (defcustom passmm-password-length 15
   "Length of generated passwords."
   :type 'integer
@@ -60,8 +68,9 @@
 
 (defvar passmm-mode-map
   (let ((map (make-keymap)))
-    (define-key map (kbd "C-c C-p g") 'passmm-generate-password)
     (define-key map (kbd "C-c C-p +") 'passmm-generate-password)
+    (define-key map (kbd "RET")       'passmm-edit-entry)
+    (define-key map (kbd "C-<return>")  'passmm-kill-password)
     map)
   "Default keymap for passmm.")
 
@@ -84,6 +93,61 @@ buffer and refreshed."
         (passmm-mode t)))
     (switch-to-buffer buf)))
 
+(defun passmm-edit-entry (&optional keep-password)
+  "Edit a password file.
+
+The buffer will be narrowed so that it doesn't actually show the
+password (the first line).  If KEEP-PASSWORD is non-nil then no
+narrowing will be used and the entire file will be shown."
+  (interactive "P")
+  (let ((name (dired-get-file-for-visit)))
+    (if (and (file-exists-p name) (not (file-directory-p name)))
+        (progn (find-file name)
+               (when (not keep-password)
+                 (goto-char (point-min))
+                 (forward-line)
+                 (forward-whitespace 1)
+                 (forward-line 0)
+                 (narrow-to-region (point) (point-max))))
+      (dired-maybe-insert-subdir name))))
+
+(defun passmm-kill-password ()
+  "Store a password on the kill ring.
+
+The password is taken from the file that is at point.  After
+`passmm-kill-timeout' seconds, the password will be removed from
+the kill ring and the system clipboard."
+  (interactive)
+  (let ((name (dired-get-file-for-visit))
+        history-pointer password)
+    (if (and (file-exists-p name) (not (file-directory-p name)))
+        (save-excursion
+          (find-file name)
+          (goto-char (point-min))
+          (setq password (buffer-substring-no-properties
+                          (point) (progn (end-of-line) (point))))
+          (kill-new password)
+          (setq history-pointer kill-ring-yank-pointer)
+          (kill-buffer)
+          (message "Copied %s to clipboard. Will clear in %s seconds."
+                   (passmm-relative-path name) passmm-kill-timeout)
+          (run-at-time passmm-kill-timeout nil
+            (lambda ()
+              ;; This is a bit of a mess.  We need to figure out if
+              ;; the system clipboard still contains the original
+              ;; password, and if so remove it.  However, if the
+              ;; clipboard hasn't changed since we last set it then
+              ;; Emacs reports the system clipboard as `nil'.
+              (when (and interprogram-paste-function interprogram-cut-function)
+                (let ((clipboard (funcall interprogram-paste-function)))
+                  (when (or (string-equal password clipboard)
+                            (and (not clipboard)
+                                 (eq history-pointer kill-ring-yank-pointer)))
+                    (funcall interprogram-cut-function ""))))
+              (setcar history-pointer "")
+              (message "Password cleared."))))
+      (message "%s is not a file" name))))
+
 (defun passmm-generate-password (&optional ask-dir)
   "Generate a password entry after asking for its name.
 
@@ -101,6 +165,11 @@ current directory in the `dired' buffer."
     (passmm-pass jump "generate" (concat (file-name-as-directory rdir) name)
                  (number-to-string passmm-password-length))))
 
+(defun passmm-relative-path (path)
+  "Make the absolute PATH relative to the password store."
+  (let ((store (expand-file-name passmm-store-directory)))
+    (file-name-sans-extension (file-relative-name path store))))
+
 (defun passmm-pass (callback &rest args)
   "Run the pass program and invoke CALLBACK when it completes.
 ARGS are given directly to pass unchanged.  (Note: CALLBACK is
@@ -111,11 +180,26 @@ invoked with the passmm/dired buffer active.)"
         (save-excursion
           (with-current-buffer (or (get-buffer passmm-buffer-name)
                                    (passmm-list-passwords))
-            (revert-buffer)
+            (revert-buffer t t t)
             (and callback (funcall callback))))))))
 
 (define-minor-mode passmm-mode
-  "Add pass related features to `dired'."
+  "This is a minor mode that uses `dired' to display all password
+files from the password store.  It supports the following features:
+
+  * Generate new passwords, storing them in the current `dired'
+    subdir (or optionally prompting for a directory).  (See:
+    `passmm-generate-password'.)
+
+  * Store the password of a file into the Emacs kill ring and the
+    system clipboard for N seconds.  (See:
+    `passmm-kill-password'.)
+
+  * Edit a password file with narrowing so the password isn't
+    show.  (See: `passmm-edit-entry'.)
+
+Typically you'll want to start passmm by calling
+`passmm-list-passwords'."
   :lighter " pass"
   :group 'applications
   :keymap passmm-mode-map)
