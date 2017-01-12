@@ -5,7 +5,7 @@
 ;; Author: Peter Jones <pjones@devalot.com>
 ;; Homepage: https://github.com/pjones/passmm
 ;; Package-Requires: ((emacs "24"))
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;;
 ;; This file is not part of GNU Emacs.
 
@@ -103,24 +103,24 @@ narrowing will be used and the entire file will be shown."
   (interactive "P")
   (let ((name (dired-get-file-for-visit)))
     (if (and (file-exists-p name) (not (file-directory-p name)))
-        (progn (find-file name)
-               (when (not keep-password)
-                 (goto-char (point-min))
-                 (forward-line)
-                 (forward-whitespace 1)
-                 (forward-line 0)
-                 (narrow-to-region (point) (point-max))))
+        (progn
+          (find-file name)
+          (when (not keep-password)
+            (passmm-narrow-buffer (current-buffer))))
       (dired-maybe-insert-subdir name))))
 
-(defun passmm-kill-password ()
+(defun passmm-kill-password (&optional show-entry)
   "Store a password on the kill ring.
 
 The password is taken from the file that is at point.  After
 `passmm-kill-timeout' seconds, the password will be removed from
-the kill ring and the system clipboard."
-  (interactive)
+the kill ring and the system clipboard.
+
+If SHOW-ENTRY is non-nil also display the password file narrowed
+so that it doesn't show the password line."
+  (interactive "P")
   (let ((name (dired-get-file-for-visit))
-        history-pointer password)
+        history-pointer password buffer)
     (if (and (file-exists-p name) (not (file-directory-p name)))
         (save-excursion
           (find-file name)
@@ -129,7 +129,8 @@ the kill ring and the system clipboard."
                           (point) (progn (end-of-line) (point))))
           (kill-new password)
           (setq history-pointer kill-ring-yank-pointer)
-          (kill-buffer)
+          (if show-entry (setq buffer (current-buffer))
+            (kill-buffer))
           (message "Copied %s to clipboard. Will clear in %s seconds."
                    (passmm-relative-path name) passmm-kill-timeout)
           (run-at-time passmm-kill-timeout nil
@@ -147,7 +148,10 @@ the kill ring and the system clipboard."
                     (funcall interprogram-cut-function ""))))
               (setcar history-pointer "")
               (message "Password cleared."))))
-      (message "%s is not a file" name))))
+      (message "%s is not a file" name))
+    (when buffer
+      (passmm-narrow-buffer buffer)
+      (switch-to-buffer buffer))))
 
 (defun passmm-generate-password (&optional ask-dir)
   "Generate a password entry after asking for its name.
@@ -170,6 +174,16 @@ current directory in the `dired' buffer."
   "Make the absolute PATH relative to the password store."
   (let ((store (expand-file-name passmm-store-directory)))
     (file-name-sans-extension (file-relative-name path store))))
+
+(defun passmm-narrow-buffer (buffer)
+  "Narrow BUFFER so that it doesn't include the first line."
+  (with-current-buffer buffer
+    (widen)
+    (goto-char (point-min))
+    (forward-line)
+    (forward-whitespace 1)
+    (forward-line 0)
+    (narrow-to-region (point) (point-max))))
 
 (defun passmm-pass (callback &rest args)
   "Run the pass program and invoke CALLBACK when it completes.
