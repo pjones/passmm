@@ -4,7 +4,7 @@
 
 ;; Author: Peter Jones <pjones@devalot.com>
 ;; Homepage: https://github.com/pjones/passmm
-;; Package-Requires: ((emacs "24"))
+;; Package-Requires: ((emacs "24.4"))
 ;; Version: 0.2.0
 ;;
 ;; This file is not part of GNU Emacs.
@@ -91,7 +91,7 @@ buffer and refreshed."
           (revert-buffer))
       (with-current-buffer buf
         (rename-buffer passmm-buffer-name)
-        (passmm-mode t)))
+        (passmm-mode 1)))
     (switch-to-buffer buf)))
 
 (defun passmm-edit-entry (&optional keep-password)
