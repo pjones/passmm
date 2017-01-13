@@ -91,7 +91,7 @@ buffer and refreshed."
           (revert-buffer))
       (with-current-buffer buf
         (rename-buffer passmm-buffer-name)
-        (passmm-mode t)))
+        (passmm-mode 1)))
     (switch-to-buffer buf)))
 
 (defun passmm-edit-entry (&optional keep-password)
