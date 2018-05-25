@@ -5,7 +5,7 @@
 ;; Author: Peter Jones <pjones@devalot.com>
 ;; Homepage: https://github.com/pjones/passmm
 ;; Package-Requires: ((emacs "24.4") (password-store "0"))
-;; Version: 0.3.0
+;; Version: 0.3.1
 ;;
 ;; This file is not part of GNU Emacs.
 
@@ -39,6 +39,7 @@
 ;;; Code:
 (require 'dired)
 (require 'helm nil t)
+(require 'password-store)
 
 (defgroup passmm nil
   "A minor mode for pass (Password Store)."
@@ -78,8 +79,8 @@
   "Default keymap for passmm.")
 
 (defvar passmm-helm-source
-  (when (fboundp 'helm-build-sync-source)
-    (helm-build-sync-source "Pass Files"
+  (when (fboundp 'helm)
+    (helm-make-source "Password File" 'helm-source-sync
       :candidates #'password-store-list
       :action '(("Kill Password" . passmm-kill-password)
                 ("Edit Password" . passmm-edit-entry))))
@@ -108,8 +109,10 @@ buffer and refreshed."
 (defun passmm-helm ()
   "Helm interface for passmm."
   (interactive)
-  (helm :sources 'passmm-helm-source
-        :buffer "*helm-passmm*"))
+  (if (fboundp 'helm)
+      (helm :sources 'passmm-helm-source
+            :buffer "*helm-passmm*")
+    (error "Helm doesn't appear to be installed")))
 
 (defun passmm-edit-entry (entry &optional keep-password)
   "Edit a password file for ENTRY.

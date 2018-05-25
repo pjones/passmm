@@ -1,5 +1,9 @@
 # Revision History for passmm
 
+## 0.3.1 (May 25, 2018)
+
+  * Properly load dependencies.
+
 ## 0.3.0 (May 25, 2018)
 
   * Added an optional Helm interface.
