@@ -1,10 +1,18 @@
-# Revision History for passmm
+Release History for `passmm`
+============================
 
-## 0.3.1 (May 25, 2018)
+0.4.0 (Not yet released)
+------------------------
+
+  * Correctly insert sub-directories when using RET in a dired buffer
+
+0.3.1 (May 25, 2018)
+--------------------
 
   * Properly load dependencies.
 
-## 0.3.0 (May 25, 2018)
+0.3.0 (May 25, 2018)
+--------------------
 
   * Added an optional Helm interface.
 
@@ -13,13 +21,15 @@
     very helpful if you set `epa-pinentry-mode` to loopback (for
     example, if you are using `exwm` and don't want to block Emacs).
 
-## 0.2.0 (January 12, 2017)
+0.2.0 (January 12, 2017)
+------------------------
 
   * Added prefix argument to `passmm-kill-password` to show the
     password file after killing the password.
 
   * Fixed all issues identified by `package-lint`.
 
-## 0.1.0 (January 11, 2017)
+0.1.0 (January 11, 2017)
+------------------------
 
   * Initial release.
