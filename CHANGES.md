@@ -1,10 +1,12 @@
 Release History for `passmm`
 ============================
 
-0.4.0 (Not yet released)
-------------------------
+0.4.0 (November 28, 2018)
+-------------------------
 
   * Correctly insert sub-directories when using RET in a dired buffer
+
+  * Add an interface for Ivy
 
 0.3.1 (May 25, 2018)
 --------------------

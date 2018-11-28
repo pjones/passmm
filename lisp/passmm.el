@@ -5,7 +5,7 @@
 ;; Author: Peter Jones <pjones@devalot.com>
 ;; Homepage: https://github.com/pjones/passmm
 ;; Package-Requires: ((emacs "24.4") (password-store "0"))
-;; Version: 0.3.1
+;; Version: 0.4.0
 ;;
 ;; This file is not part of GNU Emacs.
 
@@ -13,7 +13,7 @@
 ;;
 ;; This is a minor mode that uses `dired' to display all password
 ;; files from the password store.  It also contains an optional
-;; interface for Helm.
+;; interface for Ivy/Helm.
 
 ;;; License:
 ;;
@@ -65,6 +65,13 @@
   :type 'integer
   :group 'passmm)
 
+(defcustom passmm-completion-package 'ivy
+  "Which minibuffer completion framework to use."
+  :type '(choice
+          (const :tag "None" nil)
+          (const :tag "Ivy"  ivy)
+          (const :tag "Helm" helm))
+  :group 'passmm)
 
 ;;; Nothing interesting after this point.
 (defvar passmm-buffer-name "*passwords*"
@@ -77,14 +84,6 @@
     (define-key map (kbd "C-<return>") #'passmm-kill-password)
     map)
   "Default keymap for passmm.")
-
-(defvar passmm-helm-source
-  (when (fboundp 'helm)
-    (helm-make-source "Password File" 'helm-source-sync
-      :candidates #'password-store-list
-      :action '(("Kill Password" . passmm-kill-password)
-                ("Edit Password" . passmm-edit-entry))))
-  "Internal variable to track password files for Helm.")
 
 ;;;###autoload
 (defun passmm-list-passwords ()
@@ -106,13 +105,38 @@ buffer and refreshed."
     (switch-to-buffer buf)))
 
 ;;;###autoload
-(defun passmm-helm ()
-  "Helm interface for passmm."
+(defun passmm-completing-read ()
+  "Prompt for a password and then put it in the `kill-ring'."
   (interactive)
-  (if (fboundp 'helm)
-      (helm :sources 'passmm-helm-source
-            :buffer "*helm-passmm*")
-    (error "Helm doesn't appear to be installed")))
+  (cond
+   ((and (fboundp 'ivy-read) (eq passmm-completion-package 'ivy))
+    (ivy-read "Password: " (password-store-list)
+              :action 'passmm-maybe-kill-password
+              :caller 'passmm-completing-read
+              :require-match nil
+              :history 'passmm-completing-read-history))
+   ((and (fboundp 'helm) (eq passmm-completion-package 'helm))
+    (helm :sources 'passmm-helm-source
+          :buffer "*helm-passmm*"))
+   (t
+    (passmm-maybe-kill-password
+     (completing-read "Password: "
+                      (password-store-list)
+                      nil nil nil 'passmm-completing-read-history)))))
+
+(when (fboundp 'ivy-set-actions)
+  (ivy-set-actions
+   'passmm-completing-read
+   '(("k" passmm-maybe-kill-password "Kill Password")
+     ("e" passmm-edit-entry "Edit Password"))))
+
+(defvar passmm-helm-source
+  (when (fboundp 'helm)
+    (helm-make-source "Password File" 'helm-source-sync
+      :candidates #'password-store-list
+      :action '(("Kill Password" . passmm-kill-password)
+                ("Edit Password" . passmm-edit-entry))))
+  "Internal variable to track password files for Helm.")
 
 (defun passmm-edit-entry (entry &optional keep-password)
   "Edit a password file for ENTRY.
@@ -135,7 +159,20 @@ narrowing will be used and the entire file will be shown."
                  (file-directory-p entry))
         (dired-maybe-insert-subdir entry)))))
 
-(defun passmm-kill-password (entry &optional show-entry)
+(defun passmm-maybe-kill-password (entry)
+  "Kill ENTRY if it exists, otherwise offer to create it."
+  (let ((file (passmm-entry-to-file-name entry)))
+    (if (and (file-exists-p file) (not (file-directory-p file)))
+        (passmm-kill-password entry)
+      (when (yes-or-no-p (format "Password %s doesn't exist, create it? " entry))
+        (let* ((callback (lambda () (passmm-kill-password entry)))
+               (store (expand-file-name passmm-store-directory))
+               (path (concat (file-name-as-directory store) entry))
+               (name (file-relative-name path store)))
+          (passmm-pass callback "generate" name
+                       (number-to-string passmm-password-length)))))))
+
+(defun passmm-kill-password (entry)
   "Store a password on the kill ring for ENTRY.
 
 The password is taken from the file that is at point.  After
@@ -144,20 +181,18 @@ the kill ring and the system clipboard.
 
 If SHOW-ENTRY is non-nil also display the password file narrowed
 so that it doesn't show the password line."
-  (interactive (list (dired-get-file-for-visit)
-                     current-prefix-arg))
+  (interactive (list (dired-get-file-for-visit)))
   (let ((name (passmm-entry-to-file-name entry))
-        history-pointer password buffer)
+        history-pointer password)
     (if (and (file-exists-p name) (not (file-directory-p name)))
         (save-excursion
-          (find-file name)
-          (goto-char (point-min))
-          (setq password (buffer-substring-no-properties
-                          (point) (progn (end-of-line) (point))))
-          (kill-new password)
-          (setq history-pointer kill-ring-yank-pointer)
-          (if show-entry (setq buffer (current-buffer))
-            (kill-buffer))
+          (with-temp-buffer
+            (insert-file-contents name)
+            (goto-char (point-min))
+            (setq password (buffer-substring-no-properties
+                            (point) (progn (end-of-line) (point))))
+            (kill-new password)
+            (setq history-pointer kill-ring-yank-pointer))
           (message "Copied %s to clipboard. Will clear in %s seconds."
                    (passmm-relative-path name) passmm-kill-timeout)
           (run-at-time passmm-kill-timeout nil
@@ -175,10 +210,7 @@ so that it doesn't show the password line."
                     (funcall interprogram-cut-function ""))))
               (setcar history-pointer "")
               (message "Password cleared."))))
-      (message "%s is not a file" name))
-    (when buffer
-      (passmm-narrow-buffer buffer)
-      (switch-to-buffer buffer))))
+      (message "%s is not a file" name))))
 
 (defun passmm-generate-password (ask-dir)
   "Generate a password entry after asking for its name.
