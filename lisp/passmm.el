@@ -5,7 +5,7 @@
 ;; Author: Peter Jones <pjones@devalot.com>
 ;; Homepage: https://github.com/pjones/passmm
 ;; Package-Requires: ((emacs "24.4") (password-store "0"))
-;; Version: 0.4.0
+;; Version: 0.4.1
 ;;
 ;; This file is not part of GNU Emacs.
 
@@ -182,35 +182,39 @@ the kill ring and the system clipboard.
 If SHOW-ENTRY is non-nil also display the password file narrowed
 so that it doesn't show the password line."
   (interactive (list (dired-get-file-for-visit)))
-  (let ((name (passmm-entry-to-file-name entry))
-        history-pointer password)
+  (let ((password (passmm-get-password entry))
+        history-pointer)
+    (kill-new password)
+    (setq history-pointer kill-ring-yank-pointer)
+    (message "Copied %s to clipboard. Will clear in %s seconds."
+             entry passmm-kill-timeout)
+    (run-at-time passmm-kill-timeout nil
+      (lambda ()
+        ;; This is a bit of a mess.  We need to figure out if
+        ;; the system clipboard still contains the original
+        ;; password, and if so remove it.  However, if the
+        ;; clipboard hasn't changed since we last set it then
+        ;; Emacs reports the system clipboard as `nil'.
+        (when (and interprogram-paste-function interprogram-cut-function)
+          (let ((clipboard (funcall interprogram-paste-function)))
+            (when (or (string-equal password clipboard)
+                      (and (not clipboard)
+                           (eq history-pointer kill-ring-yank-pointer)))
+              (funcall interprogram-cut-function ""))))
+        (setcar history-pointer "")
+        (message "Password cleared.")))))
+
+(defun passmm-get-password (entry)
+  "Return the password for ENTRY."
+  (let ((name (passmm-entry-to-file-name entry)))
     (if (and (file-exists-p name) (not (file-directory-p name)))
         (save-excursion
           (with-temp-buffer
             (insert-file-contents name)
             (goto-char (point-min))
-            (setq password (buffer-substring-no-properties
-                            (point) (progn (end-of-line) (point))))
-            (kill-new password)
-            (setq history-pointer kill-ring-yank-pointer))
-          (message "Copied %s to clipboard. Will clear in %s seconds."
-                   (passmm-relative-path name) passmm-kill-timeout)
-          (run-at-time passmm-kill-timeout nil
-            (lambda ()
-              ;; This is a bit of a mess.  We need to figure out if
-              ;; the system clipboard still contains the original
-              ;; password, and if so remove it.  However, if the
-              ;; clipboard hasn't changed since we last set it then
-              ;; Emacs reports the system clipboard as `nil'.
-              (when (and interprogram-paste-function interprogram-cut-function)
-                (let ((clipboard (funcall interprogram-paste-function)))
-                  (when (or (string-equal password clipboard)
-                            (and (not clipboard)
-                                 (eq history-pointer kill-ring-yank-pointer)))
-                    (funcall interprogram-cut-function ""))))
-              (setcar history-pointer "")
-              (message "Password cleared."))))
-      (message "%s is not a file" name))))
+            (buffer-substring-no-properties
+             (point) (progn (end-of-line) (point)))))
+      (error "Password %s does not exist" entry))))
 
 (defun passmm-generate-password (ask-dir)
   "Generate a password entry after asking for its name.

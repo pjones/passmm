@@ -1,6 +1,12 @@
 Release History for `passmm`
 ============================
 
+0.4.1 (November 30, 2018)
+-------------------------
+
+  * New function `passmm-get-password` so you can read passwords from
+    lisp and respect `epa-pinentry-mode`.
+
 0.4.0 (November 28, 2018)
 -------------------------
 
