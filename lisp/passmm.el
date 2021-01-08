@@ -1,11 +1,11 @@
 ;;; passmm.el --- A minor mode for pass (Password Store).  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2016-2018 Peter Jones <pjones@devalot.com>
+;; Copyright (C) 2016-2021 Peter Jones <pjones@devalot.com>
 
 ;; Author: Peter Jones <pjones@devalot.com>
 ;; Homepage: https://github.com/pjones/passmm
 ;; Package-Requires: ((emacs "24.4") (password-store "0"))
-;; Version: 0.4.1
+;; Version: 0.4.2
 ;;
 ;; This file is not part of GNU Emacs.
 
@@ -13,7 +13,7 @@
 ;;
 ;; This is a minor mode that uses `dired' to display all password
 ;; files from the password store.  It also contains an optional
-;; interface for Ivy/Helm.
+;; interface for Ivy/Helm/Embark.
 
 ;;; License:
 ;;
@@ -37,7 +37,9 @@
 ;; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ;;; Code:
+
 (require 'dired)
+(require 'embark nil t)
 (require 'helm nil t)
 (require 'password-store)
 
@@ -120,22 +122,35 @@ buffer and refreshed."
           :buffer "*helm-passmm*"))
    (t
     (passmm-maybe-kill-password
-     (completing-read "Password: "
-                      (password-store-list)
-                      nil nil nil 'passmm-completing-read-history)))))
+     (completing-read
+      "Password: "
+      (lambda (string predicate action)
+        (if (eq action 'metadata)
+            '(metadata (category . password))
+          (complete-with-action
+           action (password-store-list) string predicate))))))))
 
 (when (fboundp 'ivy-set-actions)
   (ivy-set-actions
    'passmm-completing-read
    '(("k" passmm-maybe-kill-password "Kill Password")
-     ("e" passmm-edit-entry "Edit Password"))))
+     ("e" passmm-edit-entry-direct "Edit Password"))))
+
+(when (fboundp 'embark-define-keymap)
+  (embark-define-keymap embark-password-actions
+    "Keymap actions for passwords in the password-store."
+    ("e" passmm-edit-entry-direct)
+    ("k" passmm-maybe-kill-password))
+  (add-to-list
+   'embark-keymap-alist
+   '(password . embark-password-actions)))
 
 (defvar passmm-helm-source
   (when (fboundp 'helm)
     (helm-make-source "Password File" 'helm-source-sync
       :candidates #'password-store-list
       :action '(("Kill Password" . passmm-kill-password)
-                ("Edit Password" . passmm-edit-entry))))
+                ("Edit Password" . passmm-edit-entry-direct))))
   "Internal variable to track password files for Helm.")
 
 (defun passmm-edit-entry (entry &optional keep-password)
@@ -148,19 +163,27 @@ password (the first line).  If KEEP-PASSWORD is non-nil then no
 narrowing will be used and the entire file will be shown."
   (interactive (list (dired-get-file-for-visit)
                      current-prefix-arg))
+  (passmm-edit-entry-direct entry keep-password)
+  ;; Entry might be a directory in the dired buffer:
+  (when (and (derived-mode-p 'dired-mode)
+             (file-directory-p entry))
+    (dired-maybe-insert-subdir entry)))
+
+(defun passmm-edit-entry-direct (entry &optional keep-password)
+  "Internal version of `passmm-edit-entry'.
+ENTRY is a password entry.  KEEP-PASSWORD, when non-nil, means don't
+narrow the file buffer."
+  (interactive "fPassword: ")
   (let ((name (passmm-entry-to-file-name entry)))
-    (if (and (file-exists-p name) (not (file-directory-p name)))
-        (progn
-          (find-file name)
-          (when (not keep-password)
-            (passmm-narrow-buffer (current-buffer))))
-      ;; Entry might be a directory in the dired buffer:
-      (when (and (derived-mode-p 'dired-mode)
-                 (file-directory-p entry))
-        (dired-maybe-insert-subdir entry)))))
+    (when (and (file-exists-p name)
+               (not (file-directory-p name)))
+      (find-file name)
+      (when (not keep-password)
+        (passmm-narrow-buffer (current-buffer))))))
 
 (defun passmm-maybe-kill-password (entry)
   "Kill ENTRY if it exists, otherwise offer to create it."
+  (interactive "fPassword: ")
   (let ((file (passmm-entry-to-file-name entry)))
     (if (and (file-exists-p file) (not (file-directory-p file)))
         (passmm-kill-password entry)

@@ -1,6 +1,11 @@
 Release History for `passmm`
 ============================
 
+0.4.2 (January 8, 2021)
+-------------------------
+
+  * Added support for `embark`.
+
 0.4.1 (November 30, 2018)
 -------------------------
 
