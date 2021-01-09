@@ -136,11 +136,13 @@ buffer and refreshed."
    '(("k" passmm-maybe-kill-password "Kill Password")
      ("e" passmm-edit-entry-direct "Edit Password"))))
 
-(when (fboundp 'embark-define-keymap)
-  (embark-define-keymap embark-password-actions
-    "Keymap actions for passwords in the password-store."
-    ("e" passmm-edit-entry-direct)
-    ("k" passmm-maybe-kill-password))
+(when (boundp 'embark-keymap-alist)
+  (defvar embark-password-actions
+    (let ((map (make-sparse-keymap)))
+      (define-key map (kbd "e") #'passmm-edit-entry-direct)
+      (define-key map (kbd "k") #'passmm-maybe-kill-password)
+      map)
+    "Keymap actions for passwords in the password-store.")
   (add-to-list
    'embark-keymap-alist
    '(password . embark-password-actions)))
