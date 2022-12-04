@@ -1,6 +1,13 @@
 Release History for `passmm`
 ============================
 
+1.0.0 (December 4. 2022)
+-------------------------
+
+  * Removed support for packages not in Emacs (embark, helm, ivy).
+
+  * Cleaned up the code and added customization options.
+
 0.4.2 (January 8, 2021)
 -------------------------
 
@@ -9,7 +16,7 @@ Release History for `passmm`
 0.4.1 (November 30, 2018)
 -------------------------
 
-  * New function `passmm-get-password` so you can read passwords from
+  * New function `passmm--get-password` so you can read passwords from
     lisp and respect `epa-pinentry-mode`.
 
 0.4.0 (November 28, 2018)

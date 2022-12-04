@@ -12,7 +12,7 @@ files from the password store.  It supports the following features:
     ‘passmm-kill-password’.)
 
   * Edit a password file with narrowing so the password isn’t
-    show.  (See: ‘passmm-edit-entry’.)
+    show.  (See: ‘passmm-dired-action’.)
 
 Typically you’ll want to start passmm by calling
 ‘passmm-list-passwords’.

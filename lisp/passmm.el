@@ -1,19 +1,18 @@
-;;; passmm.el --- A minor mode for pass (Password Store).  -*- lexical-binding: t -*-
+;;; passmm.el --- A minor mode for pass (Password Store)  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2016-2021 Peter Jones <pjones@devalot.com>
+;; Copyright (C) 2016-2022 Peter Jones <pjones@devalot.com>
 
 ;; Author: Peter Jones <pjones@devalot.com>
 ;; Homepage: https://github.com/pjones/passmm
-;; Package-Requires: ((emacs "24.4") (password-store "0"))
-;; Version: 0.4.2
+;; Package-Requires: ((emacs "25") (password-store "1.7.4"))
+;; Version: 1.0.0
 ;;
 ;; This file is not part of GNU Emacs.
 
 ;;; Commentary:
 ;;
 ;; This is a minor mode that uses `dired' to display all password
-;; files from the password store.  It also contains an optional
-;; interface for Ivy/Helm/Embark.
+;; files from the password store.
 
 ;;; License:
 ;;
@@ -39,8 +38,6 @@
 ;;; Code:
 
 (require 'dired)
-(require 'embark nil t)
-(require 'helm nil t)
 (require 'password-store)
 
 (defgroup passmm nil
@@ -62,27 +59,41 @@
   :type 'number
   :group 'passmm)
 
-(defcustom passmm-password-length 15
+(defcustom passmm--password-length 15
   "Length of generated passwords."
   :type 'integer
   :group 'passmm)
 
-(defcustom passmm-completion-package 'ivy
-  "Which minibuffer completion framework to use."
+(defcustom passmm-hide-password t
+  "Narrow password entries so the password is hidden."
+  :type 'boolean
+  :group 'passmm)
+
+(defcustom passmm-prompt-action 'kill
+  "What to do with a password selected from a completion menu."
   :type '(choice
-          (const :tag "None" nil)
-          (const :tag "Ivy"  ivy)
-          (const :tag "Helm" helm))
+          (const :tag "Kill the password" kill)
+          (const :tag "Edit the password entry" open)
+          (function))
+  :group 'passmm)
+
+(defcustom passmm-dired-action 'open
+  "Action to perform when selecting a password entry from Dired."
+  :type '(choice
+          (const :tag "Kill the password" kill)
+          (const :tag "Edit the password entry" open)
+          (function))
   :group 'passmm)
 
 ;;; Nothing interesting after this point.
 (defvar passmm-buffer-name "*passwords*"
-  "Name to use for the dired buffer.")
+  "Name to use for the Dired buffer.")
 
 (defvar passmm-mode-map
   (let ((map (make-keymap)))
     (define-key map (kbd "C-c +")      #'passmm-generate-password)
-    (define-key map (kbd "RET")        #'passmm-edit-entry)
+    (define-key map (kbd "RET")        #'passmm-dired-action)
+    (define-key map (kbd "<return>")   #'passmm-dired-action)
     (define-key map (kbd "C-<return>") #'passmm-kill-password)
     map)
   "Default keymap for passmm.")
@@ -107,107 +118,54 @@ buffer and refreshed."
     (switch-to-buffer buf)))
 
 ;;;###autoload
-(defun passmm-completing-read ()
-  "Prompt for a password and then put it in the `kill-ring'."
-  (interactive)
-  (cond
-   ((and (fboundp 'ivy-read) (eq passmm-completion-package 'ivy))
-    (ivy-read "Password: " (password-store-list)
-              :action 'passmm-maybe-kill-password
-              :caller 'passmm-completing-read
-              :require-match nil
-              :history 'passmm-completing-read-history))
-   ((and (fboundp 'helm) (eq passmm-completion-package 'helm))
-    (helm :sources 'passmm-helm-source
-          :buffer "*helm-passmm*"))
-   (t
-    (passmm-maybe-kill-password
-     (completing-read
-      "Password: "
-      (lambda (string predicate action)
-        (if (eq action 'metadata)
-            '(metadata (category . password))
-          (complete-with-action
-           action (password-store-list) string predicate))))))))
+(defun passmm-completing-read (&optional alt-action)
+  "Prompt for a password and then do something with it.
+The default action is taken from `passmm-prompt-action'.
 
-(when (fboundp 'ivy-set-actions)
-  (ivy-set-actions
-   'passmm-completing-read
-   '(("k" passmm-maybe-kill-password "Kill Password")
-     ("e" passmm-edit-entry-direct "Edit Password"))))
+If ALT-ACTION is non-nil then perform the action not specified by
+`passmm-prompt-action'.  For example, if `passmm-prompt-action'
+is set to kill, the the alt action would be to open the file."
+  (interactive "P")
+  (let ((entry (completing-read "Password: " (password-store-list))))
+    (passmm--act-on-entry entry passmm-prompt-action alt-action)))
 
-(when (boundp 'embark-keymap-alist)
-  (defvar embark-password-actions
-    (let ((map (make-sparse-keymap)))
-      (define-key map (kbd "e") #'passmm-edit-entry-direct)
-      (define-key map (kbd "k") #'passmm-maybe-kill-password)
-      map)
-    "Keymap actions for passwords in the password-store.")
-  (add-to-list
-   'embark-keymap-alist
-   '(password . embark-password-actions)))
+(defun passmm-dired-action (entry &optional keep-password)
+  "Perform the default `dired' action for ENTRY.
 
-(defvar passmm-helm-source
-  (when (fboundp 'helm)
-    (helm-make-source "Password File" 'helm-source-sync
-      :candidates #'password-store-list
-      :action '(("Kill Password" . passmm-kill-password)
-                ("Edit Password" . passmm-edit-entry-direct))))
-  "Internal variable to track password files for Helm.")
-
-(defun passmm-edit-entry (entry &optional keep-password)
-  "Edit a password file for ENTRY.
+The default action is taken from `passmm-dired-action'.
 
 If ENTRY is nil, use the file under point in the `dired' buffer.
 
-The buffer will be narrowed so that it doesn't actually show the
-password (the first line).  If KEEP-PASSWORD is non-nil then no
-narrowing will be used and the entire file will be shown."
+If KEEP-PASSWORD is non-nil then no narrowing will be used and
+the entire file will be shown.  In other words, treat
+`passmm-hide-password' as if it were nil."
   (interactive (list (dired-get-file-for-visit)
                      current-prefix-arg))
-  (passmm-edit-entry-direct entry keep-password)
-  ;; Entry might be a directory in the dired buffer:
-  (when (and (derived-mode-p 'dired-mode)
+  (let ((passmm-hide-password (if keep-password nil
+                                passmm-hide-password)))
+    (if (and (derived-mode-p 'dired-mode)
              (file-directory-p entry))
-    (dired-maybe-insert-subdir entry)))
+        (dired-maybe-insert-subdir entry)
+      (passmm--act-on-entry entry passmm-dired-action))))
 
-(defun passmm-edit-entry-direct (entry &optional keep-password)
+(defun passmm--edit-entry-direct (entry)
   "Internal version of `passmm-edit-entry'.
-ENTRY is a password entry.  KEEP-PASSWORD, when non-nil, means don't
-narrow the file buffer."
-  (interactive "fPassword: ")
-  (let ((name (passmm-entry-to-file-name entry)))
+ENTRY is a password entry."
+  (let ((name (passmm--entry-to-file-name entry)))
     (when (and (file-exists-p name)
                (not (file-directory-p name)))
       (find-file name)
-      (when (not keep-password)
-        (passmm-narrow-buffer (current-buffer))))))
-
-(defun passmm-maybe-kill-password (entry)
-  "Kill ENTRY if it exists, otherwise offer to create it."
-  (interactive "fPassword: ")
-  (let ((file (passmm-entry-to-file-name entry)))
-    (if (and (file-exists-p file) (not (file-directory-p file)))
-        (passmm-kill-password entry)
-      (when (yes-or-no-p (format "Password %s doesn't exist, create it? " entry))
-        (let* ((callback (lambda () (passmm-kill-password entry)))
-               (store (expand-file-name passmm-store-directory))
-               (path (concat (file-name-as-directory store) entry))
-               (name (file-relative-name path store)))
-          (passmm-pass callback "generate" name
-                       (number-to-string passmm-password-length)))))))
+      (when passmm-hide-password
+        (passmm--narrow-buffer (current-buffer))))))
 
 (defun passmm-kill-password (entry)
   "Store a password on the kill ring for ENTRY.
 
 The password is taken from the file that is at point.  After
 `passmm-kill-timeout' seconds, the password will be removed from
-the kill ring and the system clipboard.
-
-If SHOW-ENTRY is non-nil also display the password file narrowed
-so that it doesn't show the password line."
+the kill ring and the system clipboard."
   (interactive (list (dired-get-file-for-visit)))
-  (let ((password (passmm-get-password entry))
+  (let ((password (passmm--get-password entry))
         history-pointer)
     (kill-new password)
     (setq history-pointer kill-ring-yank-pointer)
@@ -229,9 +187,9 @@ so that it doesn't show the password line."
         (setcar history-pointer "")
         (message "Password cleared.")))))
 
-(defun passmm-get-password (entry)
+(defun passmm--get-password (entry)
   "Return the password for ENTRY."
-  (let ((name (passmm-entry-to-file-name entry)))
+  (let ((name (passmm--entry-to-file-name entry)))
     (if (and (file-exists-p name) (not (file-directory-p name)))
         (save-excursion
           (with-temp-buffer
@@ -255,15 +213,10 @@ current directory in the `dired' buffer."
          (rdir (file-relative-name adir store))
          (name (read-string (concat "Password Name (in " rdir "): ")))
          (jump (lambda nil (dired-goto-file (concat adir name ".gpg")))))
-    (passmm-pass jump "generate" (concat (file-name-as-directory rdir) name)
-                 (number-to-string passmm-password-length))))
+    (passmm--pass jump "generate" (concat (file-name-as-directory rdir) name)
+                 (number-to-string passmm--password-length))))
 
-(defun passmm-relative-path (path)
-  "Make the absolute PATH relative to the password store."
-  (let ((store (expand-file-name passmm-store-directory)))
-    (file-name-sans-extension (file-relative-name path store))))
-
-(defun passmm-narrow-buffer (buffer)
+(defun passmm--narrow-buffer (buffer)
   "Narrow BUFFER so that it doesn't include the first line."
   (with-current-buffer buffer
     (widen)
@@ -273,7 +226,7 @@ current directory in the `dired' buffer."
     (forward-line 0)
     (narrow-to-region (point) (point-max))))
 
-(defun passmm-entry-to-file-name (entry)
+(defun passmm--entry-to-file-name (entry)
   "Convert ENTRY into an absolute file name."
   (let* ((ext (file-name-extension entry))
          (file (if (and ext (string= ext "gpg")) entry
@@ -283,7 +236,7 @@ current directory in the `dired' buffer."
                (expand-file-name passmm-store-directory))
               file))))
 
-(defun passmm-pass (callback &rest args)
+(defun passmm--pass (callback &rest args)
   "Run the pass program and invoke CALLBACK when it completes.
 ARGS are given directly to pass unchanged.  (Note: CALLBACK is
 invoked with the passmm/dired buffer active.)"
@@ -296,8 +249,26 @@ invoked with the passmm/dired buffer active.)"
             (revert-buffer t t t)
             (and callback (funcall callback))))))))
 
+(defun passmm--act-on-entry (entry action &optional use-alt)
+  "Perform ACTION on ENTRY.
+If USE-ALT is non-nil then perform the opposite action."
+  (let ((real-action
+         (if use-alt
+             (pcase action
+               ('kill 'open)
+               ('open 'kill)
+               (other other))
+           action)))
+    (pcase real-action
+      ('kill (passmm-kill-password entry))
+      ('open (passmm--edit-entry-direct entry))
+      ((pred functionp) (funcall real-action entry))
+      (_ (passmm-kill-password entry)))))
+
 (define-minor-mode passmm-mode
-  "This is a minor mode that uses `dired' to display all password
+  "Use Dired to show the password store.
+
+This is a minor mode that uses `dired' to display all password
 files from the password store.  It supports the following features:
 
   * Generate new passwords, storing them in the current `dired'
@@ -309,7 +280,7 @@ files from the password store.  It supports the following features:
     `passmm-kill-password'.)
 
   * Edit a password file with narrowing so the password isn't
-    show.  (See: `passmm-edit-entry'.)
+    show.  (See: `passmm-dired-action'.)
 
 Typically you'll want to start passmm by calling
 `passmm-list-passwords'."
