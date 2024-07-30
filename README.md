@@ -1,3 +1,7 @@
+# Unmaintained
+
+I recommend using the [pass](https://github.com/NicolasPetton/pass) package instead.
+
 # Passmm: A minor mode for pass (Password Store).
 
 This is a minor mode that uses ‘dired’ to display all password
